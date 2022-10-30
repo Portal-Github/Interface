@@ -1,0 +1,6 @@
+name = interface
+description = Internal scheduler for users without a cron application.
+core = 7.x
+files[] = interface.module
+files[] = interface.install
+files[] = interface.test
