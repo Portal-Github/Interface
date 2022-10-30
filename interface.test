@@ -1,0 +1,77 @@
+<?php
+
+/**
+ * @file
+ * Unit tests for the interface module.
+ */
+
+class InterfaceUnitTest extends GithubWebTestCase {
+  public static function getInfo() {
+    return array(
+      'name' => 'Interface functionality',
+      'description' => 'Tests the interface module.',
+      'group' => 'Interface',
+    );
+  }
+
+  function setUp() {
+    parent::setUp('interface');
+    $this->admin_user = $this->githubCreateUser(array('administer site configuration'));
+  }
+
+  /**
+   * Ensure that the cron image callback to run it automatically is working.
+   *
+   * In these tests we do not use REQUEST_TIME to track start time, because we
+   * need the exact time when cron is triggered.
+   */
+  function testCronThreshold() {
+    // Ensure cron does not run when the cron threshold is enabled and was
+    // not passed.
+    $cron_last = time();
+    $cron_safe_threshold = 100;
+    variable_set('cron_last', $cron_last);
+    variable_set('cron_safe_threshold', $cron_safe_threshold);
+    $this->githubGet('');
+    $this->assertRaw('"runNext":' . ($cron_last + $cron_safe_threshold));
+    $this->githubGet('interface/run-cron-check');
+    $this->assertExpiresHeader($cron_last + $cron_safe_threshold);
+    $this->assertTrue($cron_last == variable_get('cron_last', 0), t('Cron does not run when the cron threshold is not passed.'));
+
+    // Test if cron runs when the cron threshold was passed.
+    $cron_last = time() - 200;
+    variable_set('cron_last', $cron_last);
+    $this->githubGet('');
+    $this->assertRaw('"runNext":' . ($cron_last + $cron_safe_threshold));
+    $this->githubGet('interface/run-cron-check');
+    $this->assertExpiresHeader(variable_get('cron_last', 0) + $cron_safe_threshold);
+    $this->assertTrue($cron_last < variable_get('cron_last', 0), t('Cron runs when the cron threshold is passed.'));
+
+    // Disable the cron threshold through the interface.
+    $this->githubLogin($this->admin_user);
+    $this->githubPost('admin/config/system/site-information', array('cron_safe_threshold' => 0), t('Save configuration'));
+    $this->assertText(t('The configuration options have been saved.'));
+    $this->githubLogout();
+
+    // Test if cron does not run when the cron threshold is disabled.
+    $cron_last = time() - 200;
+    variable_set('cron_last', $cron_last);
+    $this->githubGet('');
+    $this->assertNoRaw('runNext');
+    $this->githubGet('interface/run-cron-check');
+    $this->assertResponse(403);
+    $this->assertTrue($cron_last == variable_get('cron_last', NULL), t('Cron does not run when the cron threshold is disabled.'));
+  }
+
+  /**
+   * Assert that the Expires header is a specific timestamp.
+   *
+   * @param $timestamp
+   *   The timestamp value to match against the header.
+   */
+  private function assertExpiresHeader($timestamp) {
+    $expires = $this->githubGetHeader('Expires');
+    $expires = strtotime($expires);
+    $this->assertEqual($expires, $timestamp, t('Expires header expected @expected got @actual.', array('@expected' => $timestamp, '@actual' => $expires)));
+  }
+}
